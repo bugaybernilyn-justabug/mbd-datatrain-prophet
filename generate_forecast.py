@@ -85,6 +85,72 @@ def fetch_firebase_data():
         return pd.DataFrame(columns=["ds", "y"])
 
 
+def fetch_firebase_demand_data():
+    """Fetch blood request records from Firestore, aggregate to monthly demand DataFrame."""
+    firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
+    if not firebase_creds:
+        print("[Firebase/Demand] FIREBASE_CREDENTIALS not set. Skipping Firestore demand data.")
+        return pd.DataFrame(columns=["ds", "y"])
+
+    try:
+        if not firebase_admin._apps:
+            cred_dict = json.loads(firebase_creds)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+
+        db = firestore.client()
+        docs = db.collection("blood_requests").stream()
+
+        records = []
+        for doc in docs:
+            data = doc.to_dict()
+            request_date = data.get("requestDate")
+            units = data.get("units")
+            if request_date is not None and units is not None:
+                records.append({"requestDate": request_date, "units": float(units)})
+
+        if not records:
+            print("[Firebase/Demand] No records found in 'blood_requests' collection.")
+            return pd.DataFrame(columns=["ds", "y"])
+
+        fb_df = pd.DataFrame(records)
+        fb_df["requestDate"] = pd.to_datetime(fb_df["requestDate"], utc=True, errors="coerce")
+        fb_df = fb_df.dropna(subset=["requestDate"])
+        fb_df["requestDate"] = fb_df["requestDate"].dt.tz_localize(None)
+
+        # Bucket each request to the first day of its month for monthly aggregation
+        fb_df["ds"] = fb_df["requestDate"].dt.to_period("M").dt.to_timestamp()
+        monthly = fb_df.groupby("ds")["units"].sum().reset_index(name="y")
+        print(f"[Firebase/Demand] Fetched {len(records)} docs → {len(monthly)} monthly buckets.")
+        return monthly
+
+    except Exception as e:
+        print(f"[Firebase/Demand] Error fetching data: {e}")
+        return pd.DataFrame(columns=["ds", "y"])
+
+
+def merge_demand_data(historical_df, firestore_df):
+    """Merge historical CSV demand with Firestore data.
+
+    Firestore is the source of truth: when a month exists in both datasets,
+    the Firestore value replaces the historical CSV value.
+    """
+    if firestore_df.empty:
+        print("[Demand] No Firestore data; using historical CSV only.")
+        return historical_df
+
+    # Concatenate with historical first so Firestore rows come last;
+    # drop_duplicates(keep='last') then retains the Firestore value for any overlap.
+    combined = pd.concat([historical_df, firestore_df], ignore_index=True)
+    combined = combined.sort_values("ds")
+    combined = combined.drop_duplicates(subset="ds", keep="last").reset_index(drop=True)
+    print(
+        f"[Demand] Merged shape: {combined.shape} "
+        f"(historical: {len(historical_df)}, firestore: {len(firestore_df)})"
+    )
+    return combined
+
+
 def train_and_predict(df, label="Model"):
     """Train a Prophet model and predict the next 12 months."""
     model = Prophet()
@@ -126,6 +192,10 @@ def main():
     # --- Demand Pipeline ---
     demand_raw = load_demand_data()
     demand_df = process_demand_data(demand_raw)
+
+    # Fetch real-time demand from Firestore and merge (Firestore wins on overlapping months)
+    firebase_demand_df = fetch_firebase_demand_data()
+    demand_df = merge_demand_data(demand_df, firebase_demand_df)
 
     demand_forecast = train_and_predict(demand_df, label="Demand")
     export_forecast(demand_forecast, "forecast_demand.json")
