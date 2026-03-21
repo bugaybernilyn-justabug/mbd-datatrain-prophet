@@ -57,7 +57,7 @@ def run_evaluation():
         json.dump(results, f, indent=2)
     
     print(f"Evaluation complete. Prophet Accuracy: {results['Prophet']}%")
-    print("📁 Saved results to model_metrics.json")
+    print("Saved results to model_metrics.json")
 
 if __name__ == "__main__":
     run_evaluation()
