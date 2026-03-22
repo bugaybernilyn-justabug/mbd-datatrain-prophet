@@ -1,5 +1,13 @@
 {
-  "Prophet": 93.16,
-  "ARIMA": 93.5,
-  "Random Forest": 88.96
+  "Prophet_Accuracy": 93.16,
+  "Prophet_MAE": 79.52,
+  "ARIMA_Accuracy": 94.5,
+  "ARIMA_MAE": 68.09,
+  "RandomForest_Accuracy": 88.96,
+  "RandomForest_MAE": 87.67,
+  "Classification_Report": {
+    "Precision": 1.0,
+    "Recall": 1.0,
+    "F1-Score": 1.0
+  }
 }
