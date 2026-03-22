@@ -1,10 +1,10 @@
 {
-  "Prophet_Accuracy": 0,
-  "Prophet_MAE": 636.0,
-  "ARIMA_Accuracy": 86.41,
-  "ARIMA_MAE": 61.4,
-  "RandomForest_Accuracy": -4.2,
-  "RandomForest_MAE": 644.15,
+  "Prophet_Accuracy": 12.87,
+  "Prophet_MAE": 420.16,
+  "ARIMA_Accuracy": 84.9,
+  "ARIMA_MAE": 67.25,
+  "RandomForest_Accuracy": 8.67,
+  "RandomForest_MAE": 428.31,
   "Classification_Report": {
     "Precision": 1.0,
     "Recall": 0.67,
