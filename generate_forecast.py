@@ -151,11 +151,19 @@ def merge_demand_data(historical_df, firestore_df):
     return combined
 
 
+def ensure_continuous_monthly(df):
+    """Resample a monthly (ds, y) dataframe to fill any missing months with 0."""
+    df = df.set_index("ds").resample("MS").sum().reset_index()
+    df["y"] = df["y"].fillna(0)
+    print(f"[Resample] Continuous monthly shape: {df.shape}")
+    return df
+
+
 def train_and_predict(df, label="Model"):
     """Train a Prophet model and predict the next 12 months."""
     model = Prophet()
     model.fit(df)
-    future = model.make_future_dataframe(periods=12, freq="ME")
+    future = model.make_future_dataframe(periods=12, freq="MS")
     forecast = model.predict(future)
     print(f"[{label}] Forecast shape: {forecast.shape}")
     return forecast
@@ -196,6 +204,9 @@ def main():
     # Fetch real-time demand from Firestore and merge (Firestore wins on overlapping months)
     firebase_demand_df = fetch_firebase_demand_data()
     demand_df = merge_demand_data(demand_df, firebase_demand_df)
+
+    # Ensure no month gaps before training
+    demand_df = ensure_continuous_monthly(demand_df)
 
     demand_forecast = train_and_predict(demand_df, label="Demand")
     export_forecast(demand_forecast, "forecast_demand.json")
