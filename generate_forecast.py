@@ -169,11 +169,22 @@ def train_and_predict(df, label="Model"):
     return forecast
 
 
-def export_forecast(forecast, filename):
-    """Export forecast results to a JSON file."""
+def export_forecast(forecast, actuals_df, filename):
+    """Export forecast results to a JSON file.
+
+    For dates present in actuals_df, the actual y value is used.
+    For future dates, the Prophet yhat prediction is used.
+    """
     result = forecast[["ds", "yhat"]].copy()
+
+    # Merge actual values onto the forecast timeline
+    actuals = actuals_df[["ds", "y"]].copy()
+    result = result.merge(actuals, on="ds", how="left")
+
+    # Use actual y when available, otherwise fall back to yhat
+    result["value"] = result["y"].combine_first(result["yhat"])
+    result["value"] = result["value"].clip(lower=0).round(0).astype(int)
     result["date"] = result["ds"].dt.strftime("%Y-%m-%d")
-    result["value"] = result["yhat"].clip(lower=0).round(0).astype(int)
     output = result[["date", "value"]].to_dict(orient="records")
 
     with open(filename, "w") as f:
@@ -194,8 +205,16 @@ def main():
         supply_df = supply_df.groupby("ds")["y"].sum().reset_index()
         print(f"[Supply] After Firebase merge shape: {supply_df.shape}")
 
+    # Filter out records before 2024
+    supply_df = supply_df[supply_df["ds"] >= "2024-01-01"].reset_index(drop=True)
+    print(f"[Supply] After 2024+ filter shape: {supply_df.shape}")
+
+    # Aggregate to monthly totals so Prophet sees realistic 600+ unit peaks
+    supply_df = supply_df.set_index("ds").resample("MS").sum().reset_index()
+    print(f"[Supply] Monthly aggregated shape: {supply_df.shape}")
+
     supply_forecast = train_and_predict(supply_df, label="Supply")
-    export_forecast(supply_forecast, "forecast_supply.json")
+    export_forecast(supply_forecast, supply_df, "forecast_supply.json")
 
     # --- Demand Pipeline ---
     demand_raw = load_demand_data()
@@ -205,11 +224,15 @@ def main():
     firebase_demand_df = fetch_firebase_demand_data()
     demand_df = merge_demand_data(demand_df, firebase_demand_df)
 
+    # Filter out records before 2024
+    demand_df = demand_df[demand_df["ds"] >= "2024-01-01"].reset_index(drop=True)
+    print(f"[Demand] After 2024+ filter shape: {demand_df.shape}")
+
     # Ensure no month gaps before training
     demand_df = ensure_continuous_monthly(demand_df)
 
     demand_forecast = train_and_predict(demand_df, label="Demand")
-    export_forecast(demand_forecast, "forecast_demand.json")
+    export_forecast(demand_forecast, demand_df, "forecast_demand.json")
 
     print("\n✅ Forecasting complete.")
 
