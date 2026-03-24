@@ -1,13 +1,13 @@
 {
-  "Prophet_Accuracy": 12.87,
-  "Prophet_MAE": 420.16,
-  "ARIMA_Accuracy": 84.9,
-  "ARIMA_MAE": 67.25,
-  "RandomForest_Accuracy": 8.67,
-  "RandomForest_MAE": 428.31,
+  "Prophet_Accuracy": 93.16,
+  "Prophet_MAE": 79.52,
+  "LinearRegression_Accuracy": 93.17,
+  "LinearRegression_MAE": 79.42,
+  "RandomForest_Accuracy": 88.96,
+  "RandomForest_MAE": 87.67,
   "Classification_Report": {
     "Precision": 1.0,
-    "Recall": 0.67,
-    "F1-Score": 0.8
+    "Recall": 1.0,
+    "F1-Score": 1.0
   }
 }

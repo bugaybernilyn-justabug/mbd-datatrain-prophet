@@ -193,6 +193,80 @@ def export_forecast(forecast, actuals_df, filename):
     print(f"[Export] Saved {filename} with {len(output)} records.")
 
 
+def export_blood_type_distribution(supply_forecast, demand_forecast, supply_actuals, demand_actuals):
+    """Allocate total forecasted supply and demand across blood types
+    for every month in the forecast timeline, with perfect rounding that
+    guarantees sum(blood types) == total for both supply and demand.
+
+    Actuals are used for historical dates; Prophet yhat is used for future dates,
+    matching the behaviour of export_forecast exactly.
+    """
+    distribution = {
+        "O+":  0.450,
+        "A+":  0.220,
+        "B+":  0.240,
+        "AB+": 0.050,
+        "O-":  0.015,
+        "A-":  0.010,
+        "B-":  0.010,
+        "AB-": 0.005,
+    }
+
+    # Align supply and demand forecasts by date, merging in actuals
+    supply_cols = supply_forecast[["ds", "yhat"]].rename(columns={"yhat": "supply_yhat"})
+    supply_cols = supply_cols.merge(
+        supply_actuals[["ds", "y"]].rename(columns={"y": "y_supply"}),
+        on="ds", how="left"
+    )
+    demand_cols = demand_forecast[["ds", "yhat"]].rename(columns={"yhat": "demand_yhat"})
+    demand_cols = demand_cols.merge(
+        demand_actuals[["ds", "y"]].rename(columns={"y": "y_demand"}),
+        on="ds", how="left"
+    )
+    merged = supply_cols.merge(demand_cols, on="ds", how="inner")
+    merged = merged.sort_values("ds").reset_index(drop=True)
+
+    if merged.empty:
+        print("[BloodType] No aligned forecast rows found; skipping export.")
+        return
+
+    output = []
+    for _, row in merged.iterrows():
+        # Use actual value when available, fall back to Prophet yhat (mirrors export_forecast)
+        supply_val = row["y_supply"] if not pd.isna(row["y_supply"]) else row["supply_yhat"]
+        demand_val = row["y_demand"] if not pd.isna(row["y_demand"]) else row["demand_yhat"]
+        total_supply = max(0, round(supply_val))
+        total_demand = max(0, round(demand_val))
+
+        # Round each blood type allocation
+        supply_alloc = {bt: max(0, round(total_supply * pct)) for bt, pct in distribution.items()}
+        demand_alloc = {bt: max(0, round(total_demand * pct)) for bt, pct in distribution.items()}
+
+        # Apply remainder correction to O+ so sum == total exactly
+        supply_alloc["O+"] += total_supply - sum(supply_alloc.values())
+        demand_alloc["O+"] += total_demand - sum(demand_alloc.values())
+
+        output.append({
+            "date": row["ds"].strftime("%Y-%m-%d"),
+            "totals": {
+                "supply": total_supply,
+                "demand": total_demand,
+            },
+            "distribution": {
+                bt: {
+                    "supply": supply_alloc[bt],
+                    "demand": demand_alloc[bt],
+                }
+                for bt in distribution
+            },
+        })
+
+    with open("forecast_blood_types.json", "w") as f:
+        json.dump(output, f, indent=2)
+
+    print(f"[BloodType] Exported forecast_blood_types.json with {len(output)} monthly records.")
+
+
 def main():
     # --- Supply Pipeline ---
     supply_raw = load_supply_data()
@@ -233,6 +307,8 @@ def main():
 
     demand_forecast = train_and_predict(demand_df, label="Demand")
     export_forecast(demand_forecast, demand_df, "forecast_demand.json")
+
+    export_blood_type_distribution(supply_forecast, demand_forecast, supply_df, demand_df)
 
     print("\n✅ Forecasting complete.")
 
